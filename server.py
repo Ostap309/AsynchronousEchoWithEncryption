@@ -1,12 +1,17 @@
 import asyncio
 import random
 from utils import xor_decrypt, xor_encrypt
+from cryptography.fernet import Fernet
+import base64
+from math import pi
+import hashlib
 
 HOST = 'localhost'
 PORT = 9095
 
-p = 23
-g = 5
+# Группа MODP 2048 (RFC 3526)
+p = 0xFFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD129024E088A67CC74020BBEA63B139B22514A08798E3404DDEF9519B3CD3A431B302B0A6DF25F14374FE1356D6D51C245E485B576625E7EC6F44C42E9A637ED6B0BFF5CB6F406B7EDEE386BFB5A899FA5AE9F24117C4B1FE649286651ECE45B3DC2007CB8A163BF0598DA48361C55D39A69163FA8FD24CF5F83655D23DCA3AD961C62F356208552BB9ED529077096966D670C354E4ABC9804F1746C08CA18217C32905E462E36CE3BE39E772C180E86039B2783A2EC07A28FB5C55DF06F4C52C9DE2BCBF6955817183995497CEA956AE515D2261898FA051015728E5A8AACAA68FFFFFFFFFFFFFFFF
+g = 2
 
 server_secret = random.randint(1, 100)
 
@@ -33,7 +38,14 @@ async def handle_echo(reader, writer):
     await writer.drain()
 
     K = pow(A, server_secret, p)
-    print(f"🔑 Общий ключ K сформирован, значение: {K}")
+
+    required_length = (K.bit_length() + 7) // 8
+    K_bytes = K.to_bytes(required_length, "big")
+    K_hash = hashlib.sha256(K_bytes).digest()
+
+    cipher = Fernet(base64.urlsafe_b64encode(K_hash))
+
+    print(f"🔑 Общий ключ K сформирован, значение: {K_hash.hex()}")
 
     try:
         while True:
@@ -50,12 +62,14 @@ async def handle_echo(reader, writer):
             print(f"❓ {addr} Сервер принял шифротекст: {data.decode().strip()}")
 
             print("🔎 Расшифровка...")
-            message = xor_decrypt(data, K).strip()
+            # message = xor_decrypt(data, K).strip()
+            message = cipher.decrypt(data).decode().strip()
 
             print(f"📨 {addr}: {message}")
 
             try:
-                ciphertext = xor_encrypt(message, K) + b'\n'
+                # ciphertext = xor_encrypt(message, K) + b'\n'
+                ciphertext = cipher.encrypt(message.encode()) + b'\n'
 
                 print(f"🔐 Сервер сформировал шифротекст: {ciphertext.decode().strip()}")
 
